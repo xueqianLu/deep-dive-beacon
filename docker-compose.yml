@@ -1,0 +1,66 @@
+version: '3.8'
+
+services:
+  beacondb:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: beacon_db
+      POSTGRES_USER: beacon
+      POSTGRES_PASSWORD: beacon
+    ports:
+      - "15432:5432"
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wallet_user -d wallet_service"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  beaconcache:
+    image: redis:7-alpine
+    ports:
+      - "16379:6379"
+    volumes:
+      - ./data/redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  deploy:
+    build: .
+    depends_on:
+      walletdb:
+        condition: service_healthy
+      walletcache:
+        condition: service_healthy
+    volumes:
+      - ./deploy-mars.json:/root/config/deploy.json:ro
+      - ./config/config.yaml:/root/config/config.yaml:ro
+    command: ["./dive-beacon", "deploy", "--deploy-config", "/root/config/deploy.json", "--config", "/root/config.yaml"]
+
+  api:
+    build: .
+    ports:
+      - "8080:8080"
+    depends_on:
+      beacondb:
+        condition: service_healthy
+      beaconcache:
+        condition: service_healthy
+    volumes:
+      - "./config.yaml:/root/config.yaml:ro"
+    command: ["./dive-beacon", "server", "--config", "/root/config.yaml"]
+
+  blockscanner:
+    build: .
+    volumes:
+      - ./data/blockscanner:/app/scanner
+    depends_on:
+      beacondb:
+        condition: service_healthy
+      beaconcache:
+        condition: service_healthy
+    command: ["./dive-beacon", "block-scanner"]
