@@ -162,10 +162,10 @@ func (s *BeaconBlockScanner) processBeaconBlock(db *gorm.DB, blk *spec.Versioned
 	if err != nil {
 		return err
 	}
-	db.Save(dbblk)
+	db.Model(&dbmodels.BeaconBlock{}).Save(dbblk)
 	atts := s.GetBlkAtts(blk)
 	for _, att := range atts {
-		db.Save(att)
+		db.Model(&dbmodels.BeaconAttestation{}).Save(att)
 	}
 	return nil
 }
