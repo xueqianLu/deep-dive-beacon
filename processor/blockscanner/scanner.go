@@ -105,7 +105,7 @@ func (s *BeaconBlockScanner) ShouldSkip(slot int64) bool {
 	if val, exist := s.cache.Get(key); exist {
 		tm := val.(int64)
 		// skip block if failed unless 60 seconds have passed
-		if time.Now().Unix()-tm > 60 {
+		if time.Now().Unix()-tm > 10 {
 			return true
 		}
 	}
