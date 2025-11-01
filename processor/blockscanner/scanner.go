@@ -5,6 +5,7 @@ import (
 	"fmt"
 	apiv1 "github.com/attestantio/go-eth2-client/api/v1"
 	"github.com/attestantio/go-eth2-client/spec"
+	lru "github.com/hashicorp/golang-lru"
 	"github.com/redis/go-redis/v9"
 	"github.com/sirupsen/logrus"
 	beaconapi "github.com/xueqianLu/deep-dive-beacon/beacon"
@@ -30,13 +31,17 @@ type BeaconBlockScanner struct {
 	services     *services.Services
 	rwmux        sync.RWMutex
 	quit         chan struct{}
-	cache        sync.Map // string -> TaskContent
+	cache        *lru.Cache
 	beaconClient *beaconapi.BeaconClient
 	running      bool
 }
 
 func NewBeaconBlockScanner(cfg *config.Config, db *gorm.DB, redis *redis.Client, logger *logrus.Logger) *BeaconBlockScanner {
 	svc := services.NewServices(db, redis, logger, cfg)
+	cache, err := lru.New(1000)
+	if err != nil {
+		logger.WithError(err).Fatal("Failed to create LRU cache")
+	}
 
 	scan := &BeaconBlockScanner{
 		config:       cfg,
@@ -46,6 +51,7 @@ func NewBeaconBlockScanner(cfg *config.Config, db *gorm.DB, redis *redis.Client,
 		services:     svc,
 		quit:         make(chan struct{}),
 		running:      false,
+		cache:        cache,
 		beaconClient: beaconapi.NewBeaconGwClient(cfg.Chain.BeaconURL),
 	}
 	return scan
@@ -83,6 +89,28 @@ func (s *BeaconBlockScanner) Stop() {
 }
 func intToStr(num uint64) string {
 	return fmt.Sprintf("%d", num)
+}
+
+func (s *BeaconBlockScanner) SetFailed(slot int64) {
+	key := fmt.Sprintf("failed_%d", slot)
+	if _, exist := s.cache.Get(key); exist {
+		return
+	} else {
+		s.cache.Add(key, time.Now().Unix())
+	}
+}
+
+func (s *BeaconBlockScanner) ShouldSkip(slot int64) bool {
+	key := fmt.Sprintf("failed_%d", slot)
+	if val, exist := s.cache.Get(key); exist {
+		tm := val.(int64)
+		// skip block if failed unless 60 seconds have passed
+		if time.Now().Unix()-tm > 60 {
+			return true
+		}
+	}
+	return false
+
 }
 
 func (s *BeaconBlockScanner) doScanTask(task *dbmodels.ScanTask) error {
@@ -131,7 +159,13 @@ func (s *BeaconBlockScanner) doScanTask(task *dbmodels.ScanTask) error {
 			if err != nil {
 				logger.WithFields(logrus.Fields{
 					"height": height,
-				}).WithError(err).Error("Failed to get beacon block header by id")
+				}).WithError(err).Error("Failed to get beacon block by id")
+				if s.ShouldSkip(int64(height)) {
+					logger.WithField("height", height).Warning("Skipping failed height")
+					height++
+				} else {
+					s.SetFailed(int64(height))
+				}
 				continue
 			}
 			tx := s.db.Begin()
