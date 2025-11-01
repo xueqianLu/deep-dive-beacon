@@ -47,5 +47,6 @@ func Migrate(cfg config.DatabaseConfig) error {
 	return db.AutoMigrate(
 		&dbmodels.BeaconBlock{},
 		&dbmodels.BeaconBlock{},
+		&dbmodels.ScanTask{},
 	)
 }
