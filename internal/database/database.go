@@ -48,5 +48,6 @@ func Migrate(cfg config.DatabaseConfig) error {
 		&dbmodels.BeaconBlock{},
 		&dbmodels.BeaconBlock{},
 		&dbmodels.ScanTask{},
+		&dbmodels.BeaconAttestation{},
 	)
 }
