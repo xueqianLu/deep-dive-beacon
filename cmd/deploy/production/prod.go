@@ -32,6 +32,9 @@ func (d ProdDeploy) Execute() error {
 	if d.depcfg.BlockScan != nil {
 		d.addScanTask(d.depcfg.BlockScan)
 	}
+	if d.depcfg.DirectScan != nil {
+		d.addDirectlyScan(d.depcfg.DirectScan)
+	}
 	return nil
 }
 
