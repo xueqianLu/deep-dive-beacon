@@ -9,7 +9,6 @@ import (
 	"github.com/attestantio/go-eth2-client/spec/electra"
 	"github.com/attestantio/go-eth2-client/spec/phase0"
 	"github.com/xueqianLu/deep-dive-beacon/models/dbmodels"
-	"strings"
 )
 
 func (s *BeaconBlockScanner) phase0ToDBBlock(blk *phase0.SignedBeaconBlock, dbinfo *dbmodels.BeaconBlock) (*dbmodels.BeaconBlock, error) {
@@ -20,10 +19,11 @@ func (s *BeaconBlockScanner) phase0ToDBBlock(blk *phase0.SignedBeaconBlock, dbin
 	dbinfo.Eth1BlockHash = hex.EncodeToString(blk.Message.Body.ETH1Data.BlockHash)
 	dbinfo.Eth1DepositCount = uint64(blk.Message.Body.ETH1Data.DepositCount)
 	dbinfo.Eth1DepositRoot = blk.Message.Body.ETH1Data.DepositRoot.String()
-	dbinfo.Graffiti = strings.TrimRight(string(blk.Message.Body.Graffiti[:]), "\x00")
+	dbinfo.Graffiti = hex.EncodeToString(blk.Message.Body.Graffiti[:])
 	dbinfo.RandaoReveal = blk.Message.Body.RANDAOReveal.String()
 	dbinfo.ProposerSlashed = uint(len(blk.Message.Body.ProposerSlashings))
 	dbinfo.AttesterSlashed = uint(len(blk.Message.Body.AttesterSlashings))
+	dbinfo.Signature = blk.Signature.String()
 
 	return dbinfo, nil
 }
@@ -35,10 +35,11 @@ func (s *BeaconBlockScanner) altairToDBBlock(blk *altair.SignedBeaconBlock, dbin
 	dbinfo.Eth1BlockHash = hex.EncodeToString(blk.Message.Body.ETH1Data.BlockHash)
 	dbinfo.Eth1DepositCount = uint64(blk.Message.Body.ETH1Data.DepositCount)
 	dbinfo.Eth1DepositRoot = blk.Message.Body.ETH1Data.DepositRoot.String()
-	dbinfo.Graffiti = strings.TrimRight(string(blk.Message.Body.Graffiti[:]), "\x00")
+	dbinfo.Graffiti = hex.EncodeToString(blk.Message.Body.Graffiti[:])
 	dbinfo.RandaoReveal = blk.Message.Body.RANDAOReveal.String()
 	dbinfo.ProposerSlashed = uint(len(blk.Message.Body.ProposerSlashings))
 	dbinfo.AttesterSlashed = uint(len(blk.Message.Body.AttesterSlashings))
+	dbinfo.Signature = blk.Signature.String()
 	return dbinfo, nil
 }
 
@@ -49,10 +50,11 @@ func (s *BeaconBlockScanner) bellatrixToDBBlock(blk *bellatrix.SignedBeaconBlock
 	dbinfo.Eth1BlockHash = hex.EncodeToString(blk.Message.Body.ETH1Data.BlockHash)
 	dbinfo.Eth1DepositCount = uint64(blk.Message.Body.ETH1Data.DepositCount)
 	dbinfo.Eth1DepositRoot = blk.Message.Body.ETH1Data.DepositRoot.String()
-	dbinfo.Graffiti = strings.TrimRight(string(blk.Message.Body.Graffiti[:]), "\x00")
+	dbinfo.Graffiti = hex.EncodeToString(blk.Message.Body.Graffiti[:])
 	dbinfo.RandaoReveal = blk.Message.Body.RANDAOReveal.String()
 	dbinfo.ProposerSlashed = uint(len(blk.Message.Body.ProposerSlashings))
 	dbinfo.AttesterSlashed = uint(len(blk.Message.Body.AttesterSlashings))
+	dbinfo.Signature = blk.Signature.String()
 	return dbinfo, nil
 }
 
@@ -63,10 +65,11 @@ func (s *BeaconBlockScanner) capellaToDBBlock(blk *capella.SignedBeaconBlock, db
 	dbinfo.Eth1BlockHash = hex.EncodeToString(blk.Message.Body.ETH1Data.BlockHash)
 	dbinfo.Eth1DepositCount = uint64(blk.Message.Body.ETH1Data.DepositCount)
 	dbinfo.Eth1DepositRoot = blk.Message.Body.ETH1Data.DepositRoot.String()
-	dbinfo.Graffiti = strings.TrimRight(string(blk.Message.Body.Graffiti[:]), "\x00")
+	dbinfo.Graffiti = hex.EncodeToString(blk.Message.Body.Graffiti[:])
 	dbinfo.RandaoReveal = blk.Message.Body.RANDAOReveal.String()
 	dbinfo.ProposerSlashed = uint(len(blk.Message.Body.ProposerSlashings))
 	dbinfo.AttesterSlashed = uint(len(blk.Message.Body.AttesterSlashings))
+	dbinfo.Signature = blk.Signature.String()
 	return dbinfo, nil
 }
 
@@ -77,10 +80,11 @@ func (s *BeaconBlockScanner) denebToDBBlock(blk *deneb.SignedBeaconBlock, dbinfo
 	dbinfo.Eth1BlockHash = hex.EncodeToString(blk.Message.Body.ETH1Data.BlockHash)
 	dbinfo.Eth1DepositCount = uint64(blk.Message.Body.ETH1Data.DepositCount)
 	dbinfo.Eth1DepositRoot = blk.Message.Body.ETH1Data.DepositRoot.String()
-	dbinfo.Graffiti = strings.TrimRight(string(blk.Message.Body.Graffiti[:]), "\x00")
+	dbinfo.Graffiti = hex.EncodeToString(blk.Message.Body.Graffiti[:])
 	dbinfo.RandaoReveal = blk.Message.Body.RANDAOReveal.String()
 	dbinfo.ProposerSlashed = uint(len(blk.Message.Body.ProposerSlashings))
 	dbinfo.AttesterSlashed = uint(len(blk.Message.Body.AttesterSlashings))
+	dbinfo.Signature = blk.Signature.String()
 	return dbinfo, nil
 }
 
@@ -91,10 +95,11 @@ func (s *BeaconBlockScanner) electraToDBBlock(blk *electra.SignedBeaconBlock, db
 	dbinfo.Eth1BlockHash = hex.EncodeToString(blk.Message.Body.ETH1Data.BlockHash)
 	dbinfo.Eth1DepositCount = uint64(blk.Message.Body.ETH1Data.DepositCount)
 	dbinfo.Eth1DepositRoot = blk.Message.Body.ETH1Data.DepositRoot.String()
-	dbinfo.Graffiti = strings.TrimRight(string(blk.Message.Body.Graffiti[:]), "\x00")
+	dbinfo.Graffiti = hex.EncodeToString(blk.Message.Body.Graffiti[:])
 	dbinfo.RandaoReveal = blk.Message.Body.RANDAOReveal.String()
 	dbinfo.ProposerSlashed = uint(len(blk.Message.Body.ProposerSlashings))
 	dbinfo.AttesterSlashed = uint(len(blk.Message.Body.AttesterSlashings))
+	dbinfo.Signature = blk.Signature.String()
 	return dbinfo, nil
 }
 
@@ -105,9 +110,10 @@ func (s *BeaconBlockScanner) fuluToDBBlock(blk *electra.SignedBeaconBlock, dbinf
 	dbinfo.Eth1BlockHash = hex.EncodeToString(blk.Message.Body.ETH1Data.BlockHash)
 	dbinfo.Eth1DepositCount = uint64(blk.Message.Body.ETH1Data.DepositCount)
 	dbinfo.Eth1DepositRoot = blk.Message.Body.ETH1Data.DepositRoot.String()
-	dbinfo.Graffiti = strings.TrimRight(string(blk.Message.Body.Graffiti[:]), "\x00")
+	dbinfo.Graffiti = hex.EncodeToString(blk.Message.Body.Graffiti[:])
 	dbinfo.RandaoReveal = blk.Message.Body.RANDAOReveal.String()
 	dbinfo.ProposerSlashed = uint(len(blk.Message.Body.ProposerSlashings))
 	dbinfo.AttesterSlashed = uint(len(blk.Message.Body.AttesterSlashings))
+	dbinfo.Signature = blk.Signature.String()
 	return dbinfo, nil
 }

@@ -79,7 +79,7 @@ func (s *BeaconBlockScanner) Start() error {
 			if !s.running {
 				go s.doScanTask(task)
 			}
-			ticker.Reset(time.Minute)
+			ticker.Reset(time.Second * 10)
 		}
 	}
 }
@@ -141,6 +141,7 @@ func (s *BeaconBlockScanner) doScanTask(task *dbmodels.ScanTask) error {
 	for {
 		select {
 		case <-ctx.Done():
+			return err
 
 		case <-s.quit:
 			return nil
@@ -187,6 +188,9 @@ func (s *BeaconBlockScanner) doScanTask(task *dbmodels.ScanTask) error {
 			task.LastNumber = height
 			s.services.ScanTask.UpdateScanTask(task)
 			height++
+			if height%100 == 0 {
+				logger.WithField("height", height).Info("Processed beacon blocks")
+			}
 		}
 	}
 }
