@@ -146,6 +146,11 @@ func (s *DirectlyBlockScanner) doScanTask(task *dbmodels.DirectlyScanTask) error
 		height = task.Start
 	}
 
+	if height > task.End {
+		logger.Info("Scan task already completed")
+		return nil
+	}
+
 	var latest *apiv1.BeaconBlockHeader
 	var err error
 
