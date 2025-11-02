@@ -7,6 +7,7 @@ import (
 	"github.com/xueqianLu/deep-dive-beacon/internal/logger"
 	"github.com/xueqianLu/deep-dive-beacon/internal/redis"
 	"github.com/xueqianLu/deep-dive-beacon/processor/blockscanner"
+	"github.com/xueqianLu/deep-dive-beacon/processor/directlysync"
 	"os"
 	"os/signal"
 	"syscall"
@@ -53,6 +54,48 @@ var blockScanner = &cobra.Command{
 	},
 }
 
+var directScan = &cobra.Command{
+	Use:   "direct-scanner",
+	Short: "Start the directly block scanner",
+	Long:  `Start the directly scanner to sync blockchain data and store to database`,
+	Run: func(cmd *cobra.Command, args []string) {
+		// Load configuration
+		cfg := config.Load()
+
+		// Initialize logger
+		log := logger.Init(cfg.Log.Level)
+
+		// Initialize database
+		db, err := database.Init(cfg.Database)
+		if err != nil {
+			log.Fatalf("Failed to initialize database: %v", err)
+		}
+
+		// Initialize Redis
+		rdb, err := redis.Init(cfg.Redis)
+		if err != nil {
+			log.Fatalf("Failed to initialize Redis: %v", err)
+		}
+
+		// Handle graceful shutdown
+		sigChan := make(chan os.Signal, 1)
+		signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+
+		scanner := directlysync.NewDirectlyBlockScanner(cfg, db, rdb, log)
+
+		if err := scanner.Start(); err != nil {
+			log.Fatalf("Beacon direct scanner failed: %v", err)
+		}
+
+		<-sigChan
+		log.Info("Received shutdown signal, stopping directly scanner...")
+		scanner.Stop()
+
+		log.Info("Beacon directly scanner stopped")
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(blockScanner)
+	rootCmd.AddCommand(directScan)
 }

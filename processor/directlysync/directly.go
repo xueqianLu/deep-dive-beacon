@@ -1,4 +1,4 @@
-package beaconscanner
+package directlysync
 
 import (
 	"fmt"
@@ -29,15 +29,13 @@ type DirectlyBlockScanner struct {
 	logger       *logrus.Logger
 	services     *services.Services
 	rwmux        sync.RWMutex
-	start        int64
-	end          int64
 	quit         chan struct{}
 	cache        *lru.Cache
 	beaconClient *beaconapi.BeaconClient
 	running      map[uint]bool
 }
 
-func NewDirectlyBlockScanner(cfg *config.Config, db *gorm.DB, redis *redis.Client, logger *logrus.Logger, start int64, end int64) *DirectlyBlockScanner {
+func NewDirectlyBlockScanner(cfg *config.Config, db *gorm.DB, redis *redis.Client, logger *logrus.Logger) *DirectlyBlockScanner {
 	svc := services.NewServices(db, redis, logger, cfg)
 	cache, err := lru.New(1000)
 	if err != nil {
@@ -50,8 +48,6 @@ func NewDirectlyBlockScanner(cfg *config.Config, db *gorm.DB, redis *redis.Clien
 		rdb:          redis,
 		logger:       logger,
 		services:     svc,
-		start:        start,
-		end:          end,
 		quit:         make(chan struct{}),
 		running:      make(map[uint]bool),
 		cache:        cache,
