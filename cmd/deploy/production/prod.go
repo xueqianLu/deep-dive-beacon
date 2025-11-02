@@ -43,3 +43,17 @@ func (d ProdDeploy) addScanTask(scan *types.BlockScanTask) error {
 	}
 	return d.db.Create(task).Error
 }
+
+func (d ProdDeploy) addDirectlyScan(directly []*types.DirectScanTask) error {
+	for _, task := range directly {
+		ds := &dbmodels.DirectlyScanTask{
+			TaskType:   constant.DIRECTLY_SCAN_TYPE_BEACON_BLOCK,
+			Start:      task.Start,
+			End:        task.End,
+			Enabled:    true,
+			LastNumber: task.Start,
+		}
+		d.db.Create(ds)
+	}
+	return nil
+}

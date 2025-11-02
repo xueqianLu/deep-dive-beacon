@@ -8,15 +8,17 @@ import (
 )
 
 type Services struct {
-	BeaconBlock *BeaconBlockService
-	Attest      *AttestationService
-	ScanTask    *ScanTaskService
+	BeaconBlock  *BeaconBlockService
+	Attest       *AttestationService
+	ScanTask     *ScanTaskService
+	DirectlyScan *DirectlyScanTaskService
 }
 
 func NewServices(db *gorm.DB, redis *redis.Client, logger *logrus.Logger, cfg *config.Config) *Services {
 	return &Services{
-		BeaconBlock: NewBeaconBlockService(db, redis, logger),
-		Attest:      NewAttestationService(db, redis, logger),
-		ScanTask:    NewScanTaskService(db, redis, logger),
+		BeaconBlock:  NewBeaconBlockService(db, redis, logger),
+		Attest:       NewAttestationService(db, redis, logger),
+		ScanTask:     NewScanTaskService(db, redis, logger),
+		DirectlyScan: NewDirectlyScanTaskService(db, redis, logger),
 	}
 }

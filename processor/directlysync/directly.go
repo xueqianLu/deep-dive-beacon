@@ -1,7 +1,6 @@
 package beaconscanner
 
 import (
-	"context"
 	"fmt"
 	apiv1 "github.com/attestantio/go-eth2-client/api/v1"
 	"github.com/attestantio/go-eth2-client/spec"
@@ -23,41 +22,60 @@ var (
 	big0 = big.NewInt(0)
 )
 
-type BeaconBlockScanner struct {
+type DirectlyBlockScanner struct {
 	config       *config.Config
 	db           *gorm.DB
 	rdb          *redis.Client
 	logger       *logrus.Logger
 	services     *services.Services
 	rwmux        sync.RWMutex
+	start        int64
+	end          int64
 	quit         chan struct{}
 	cache        *lru.Cache
 	beaconClient *beaconapi.BeaconClient
-	running      bool
+	running      map[uint]bool
 }
 
-func NewBeaconBlockScanner(cfg *config.Config, db *gorm.DB, redis *redis.Client, logger *logrus.Logger) *BeaconBlockScanner {
+func NewDirectlyBlockScanner(cfg *config.Config, db *gorm.DB, redis *redis.Client, logger *logrus.Logger, start int64, end int64) *DirectlyBlockScanner {
 	svc := services.NewServices(db, redis, logger, cfg)
 	cache, err := lru.New(1000)
 	if err != nil {
 		logger.WithError(err).Fatal("Failed to create LRU cache")
 	}
 
-	scan := &BeaconBlockScanner{
+	scan := &DirectlyBlockScanner{
 		config:       cfg,
 		db:           db,
 		rdb:          redis,
 		logger:       logger,
 		services:     svc,
+		start:        start,
+		end:          end,
 		quit:         make(chan struct{}),
-		running:      false,
+		running:      make(map[uint]bool),
 		cache:        cache,
 		beaconClient: beaconapi.NewBeaconGwClient(cfg.Chain.BeaconURL),
 	}
 	return scan
 }
 
-func (s *BeaconBlockScanner) Start() error {
+func (s *DirectlyBlockScanner) checkTaskRunning(task *dbmodels.DirectlyScanTask) bool {
+	s.rwmux.RLock()
+	defer s.rwmux.RUnlock()
+	if running, exist := s.running[task.ID]; exist && running {
+		return true
+	}
+	return false
+}
+
+func (s *DirectlyBlockScanner) setTaskRunning(task *dbmodels.DirectlyScanTask, running bool) {
+	s.rwmux.Lock()
+	defer s.rwmux.Unlock()
+	s.running[task.ID] = running
+}
+
+func (s *DirectlyBlockScanner) Start() error {
 	s.logger.Info("Starting blockchain scanner service")
 
 	ticker := time.NewTicker(10 * time.Second) // Scan every 10 seconds
@@ -70,28 +88,36 @@ func (s *BeaconBlockScanner) Start() error {
 			return nil
 
 		case <-ticker.C:
-
-			task, err := s.services.ScanTask.GetScanTaskByType(constant.SCAN_TYPE_BEACON_BLOCK)
-			if task == nil || err != nil {
+			tasks, err := s.services.DirectlyScan.GetScanTaskByType(constant.DIRECTLY_SCAN_TYPE_BEACON_BLOCK)
+			if len(tasks) == 0 || err != nil {
 				s.logger.WithError(err).Info("Beacon block scan task is not enabled, skipping...")
 				continue
 			}
-			if !s.running {
-				go s.doScanTask(task)
+			for _, task := range tasks {
+				if s.checkTaskRunning(task) {
+					continue
+				}
+				go func(t *dbmodels.DirectlyScanTask) {
+					s.setTaskRunning(t, true)
+					defer s.setTaskRunning(t, false)
+					if err := s.doScanTask(t); err != nil {
+						s.logger.WithError(err).Error("Directly block scan task failed")
+					}
+				}(task)
 			}
 			ticker.Reset(time.Second * 10)
 		}
 	}
 }
 
-func (s *BeaconBlockScanner) Stop() {
+func (s *DirectlyBlockScanner) Stop() {
 	close(s.quit)
 }
 func intToStr(num uint64) string {
 	return fmt.Sprintf("%d", num)
 }
 
-func (s *BeaconBlockScanner) SetFailed(slot int64) {
+func (s *DirectlyBlockScanner) SetFailed(slot int64) {
 	key := fmt.Sprintf("failed_%d", slot)
 	if _, exist := s.cache.Get(key); exist {
 		return
@@ -100,7 +126,7 @@ func (s *BeaconBlockScanner) SetFailed(slot int64) {
 	}
 }
 
-func (s *BeaconBlockScanner) ShouldSkip(slot int64) bool {
+func (s *DirectlyBlockScanner) ShouldSkip(slot int64) bool {
 	key := fmt.Sprintf("failed_%d", slot)
 	if val, exist := s.cache.Get(key); exist {
 		tm := val.(int64)
@@ -113,19 +139,12 @@ func (s *BeaconBlockScanner) ShouldSkip(slot int64) bool {
 
 }
 
-func (s *BeaconBlockScanner) doScanTask(task *dbmodels.ScanTask) error {
-	logger := s.logger.WithField("module", "block-scanner")
-	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
-	defer cancel()
-
+func (s *DirectlyBlockScanner) doScanTask(task *dbmodels.DirectlyScanTask) error {
+	logger := s.logger.WithField("task", task.ID)
 	height := task.LastNumber + 1
-
-	s.running = true
-	defer func() {
-		s.running = false
-	}()
-	tm := time.NewTicker(time.Millisecond * 10)
-	defer tm.Stop()
+	if task.LastNumber < task.Start {
+		height = task.Start
+	}
 
 	var latest *apiv1.BeaconBlockHeader
 	var err error
@@ -138,64 +157,61 @@ func (s *BeaconBlockScanner) doScanTask(task *dbmodels.ScanTask) error {
 		}
 	}
 
-	for {
-		select {
-		case <-ctx.Done():
-			return err
+	var running bool = true
+	for running {
+		if latest == nil {
+			refreshLatest()
+			continue
+		}
+		if height > uint64(latest.Header.Message.Slot) {
+			time.Sleep(time.Second)
+			refreshLatest()
+			continue
+		}
 
-		case <-s.quit:
-			return nil
-		case <-tm.C:
-			if latest == nil {
-				refreshLatest()
-				continue
-			}
-			if height > uint64(latest.Header.Message.Slot) {
-				time.Sleep(time.Second)
-				refreshLatest()
-				continue
-			}
-
-			block, err := s.beaconClient.GetBlockById(intToStr(height))
-			if err != nil {
-				logger.WithFields(logrus.Fields{
-					"height": height,
-				}).WithError(err).Error("Failed to get beacon block by id")
-				if s.ShouldSkip(int64(height)) {
-					logger.WithField("height", height).Warning("Skipping failed height")
-					height++
-				} else {
-					s.SetFailed(int64(height))
-				}
-				continue
-			}
-			tx := s.db.Begin()
-			if tx.Error != nil {
-				logger.WithError(tx.Error).Error("Failed to begin db transaction")
-				return tx.Error
-			}
-			if err = s.processBeaconBlock(tx, block); err != nil {
-				tx.Rollback()
-				logger.WithError(err).Error("processor beacon block failed")
-				return err
+		block, err := s.beaconClient.GetBlockById(intToStr(height))
+		if err != nil {
+			logger.WithFields(logrus.Fields{
+				"height": height,
+			}).WithError(err).Error("Failed to get beacon block by id")
+			if s.ShouldSkip(int64(height)) {
+				logger.WithField("height", height).Warning("Skipping failed height")
+				height++
 			} else {
-				if err := tx.Commit().Error; err != nil {
-					logger.WithError(err).Error("commit transaction to db failed")
-					return err
-				}
+				s.SetFailed(int64(height))
 			}
-			// update task last processed height
-			task.LastNumber = height
-			s.services.ScanTask.UpdateScanTask(task)
-			height++
-			if height%100 == 0 {
-				logger.WithField("height", height).Info("Processed beacon blocks")
+			continue
+		}
+		tx := s.db.Begin()
+		if tx.Error != nil {
+			logger.WithError(tx.Error).Error("Failed to begin db transaction")
+			return tx.Error
+		}
+		if err = s.processBeaconBlock(tx, block); err != nil {
+			tx.Rollback()
+			logger.WithError(err).Error("processor beacon block failed")
+			return err
+		} else {
+			if err := tx.Commit().Error; err != nil {
+				logger.WithError(err).Error("commit transaction to db failed")
+				return err
 			}
 		}
+		// update task last processed height
+		task.LastNumber = height
+		s.services.DirectlyScan.UpdateScanTask(task)
+		if height%100 == 0 {
+			logger.WithFields(logrus.Fields{
+				"remain": task.End - task.LastNumber,
+				"height": height,
+			}).Info("Processed beacon blocks")
+		}
+		height++
 	}
+	return nil
 }
 
-func (s *BeaconBlockScanner) processBeaconBlock(db *gorm.DB, blk *spec.VersionedSignedBeaconBlock) error {
+func (s *DirectlyBlockScanner) processBeaconBlock(db *gorm.DB, blk *spec.VersionedSignedBeaconBlock) error {
 	dbblk, err := s.ToDBBlock(blk)
 	if err != nil {
 		return err
@@ -212,7 +228,7 @@ var (
 	slotsPerEpoch = uint64(32)
 )
 
-func (s *BeaconBlockScanner) ToDBBlock(blk *spec.VersionedSignedBeaconBlock) (*dbmodels.BeaconBlock, error) {
+func (s *DirectlyBlockScanner) ToDBBlock(blk *spec.VersionedSignedBeaconBlock) (*dbmodels.BeaconBlock, error) {
 	slot, _ := blk.Slot()
 	dbBlk := new(dbmodels.BeaconBlock)
 	dbBlk.SlotNumber = uint64(slot)
@@ -242,7 +258,7 @@ func (s *BeaconBlockScanner) ToDBBlock(blk *spec.VersionedSignedBeaconBlock) (*d
 	return nil, fmt.Errorf("unknown block version at slot %d", slot)
 }
 
-func (s *BeaconBlockScanner) GetBlkAtts(blk *spec.VersionedSignedBeaconBlock) []*dbmodels.BeaconAttestation {
+func (s *DirectlyBlockScanner) GetBlkAtts(blk *spec.VersionedSignedBeaconBlock) []*dbmodels.BeaconAttestation {
 	if blk.Phase0 != nil {
 		return s.getPhase0Attestations(blk.Phase0)
 	}
